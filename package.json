@@ -1,0 +1,20 @@
+{
+  "name": "linux-myshell",
+  "version": "1.0.0",
+  "description": "Linux の「すべてはファイルである」思想を体験できる自作シェル",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "myshell": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^20.14.0"
+  }
+}
