@@ -8,22 +8,16 @@ const BANNER = `MyShell — Linux の「すべてはファイルである」を�
 help でコマンド一覧、exit で終了します。
 `;
 
-/** 1行分のコマンド（パイプライン込み）を実行し、標準出力に相当する文字列を返す */
+/** 1行分のコマンドを実行し、標準出力に相当する文字列を返す */
 function runLine(ctx: ShellContext, line: string): string {
-  const stages = parseLine(line);
-  let stdin = "";
-  for (const stage of stages) {
-    const command = commands[stage.name];
-    if (!command) throw new FsError(`${stage.name}: コマンドが見つかりません`);
-    const output = command(ctx, stage.args, stdin);
-    if (stage.redirect) {
-      ctx.fs.write(stage.redirect.file.startsWith("/") ? stage.redirect.file : `${ctx.cwd}/${stage.redirect.file}`, output, stage.redirect.append);
-      stdin = "";
-    } else {
-      stdin = output;
-    }
-  }
-  return stdin;
+  const { name, args, redirect } = parseLine(line);
+  const command = commands[name];
+  if (!command) throw new FsError(`${name}: コマンドが見つかりません`);
+  const output = command(ctx, args);
+  if (!redirect) return output;
+  const path = redirect.file.startsWith("/") ? redirect.file : `${ctx.cwd}/${redirect.file}`;
+  ctx.fs.write(path, output, redirect.append);
+  return "";
 }
 
 export function startShell(): void {

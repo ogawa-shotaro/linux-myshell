@@ -231,15 +231,4 @@ export class FileSystem {
     this.inodes.delete(targetIno);
     parent.modifiedAt = new Date();
   }
-
-  rename(oldPath: string, newPath: string): void {
-    const { parentPath: oldParentPath, name: oldName } = this.splitParent(oldPath);
-    const { parentPath: newParentPath, name: newName } = this.splitParent(newPath);
-    const oldParent = this.asDir(this.getInode(this.resolve(oldParentPath)), oldParentPath);
-    const newParent = this.asDir(this.getInode(this.resolve(newParentPath)), newParentPath);
-    const ino = oldParent.children.get(oldName);
-    if (ino === undefined) throw new FsError(`${oldPath}: そのようなファイルやディレクトリはありません`);
-    oldParent.children.delete(oldName);
-    newParent.children.set(newName, ino);
-  }
 }

@@ -8,18 +8,10 @@ export interface ShellContext {
   exit: boolean;
 }
 
-export type Command = (ctx: ShellContext, args: string[], stdin: string) => string;
+export type Command = (ctx: ShellContext, args: string[]) => string;
 
 function resolvePath(ctx: ShellContext, path: string): string {
   return normalizePath(ctx.cwd, path);
-}
-
-function octalToMode(octal: string): string {
-  const bits = ["---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"];
-  return octal
-    .split("")
-    .map((d) => bits[parseInt(d, 8)] ?? "---")
-    .join("");
 }
 
 function sizeOf(inode: Inode): number {
@@ -29,7 +21,7 @@ function sizeOf(inode: Inode): number {
   return 0; // device: 読むたびに値が変わるので固定サイズは無い
 }
 
-function formatLs(fs: FileSystem, name: string, inode: Inode): string {
+function formatLs(name: string, inode: Inode): string {
   const t = typeChar(inode.type);
   const link = inode.type === "symlink" ? ` -> ${inode.target}` : "";
   return `${t}${inode.mode} ${inode.owner.padEnd(5)} ${inode.group.padEnd(5)} ${String(sizeOf(inode)).padStart(6)}  ${name}${link}`;
@@ -37,12 +29,6 @@ function formatLs(fs: FileSystem, name: string, inode: Inode): string {
 
 export const commands: Record<string, Command> = {
   pwd: (ctx) => ctx.cwd + "\n",
-
-  whoami: (ctx) => ctx.user + "\n",
-
-  id: (ctx) => `uid=1000(${ctx.user}) gid=1000(${ctx.user})\n`,
-
-  uname: () => "MyShell 1.0 (TypeScript virtual kernel)\n",
 
   echo: (_ctx, args) => args.join(" ") + "\n",
 
@@ -52,7 +38,7 @@ export const commands: Record<string, Command> = {
     const path = resolvePath(ctx, target);
     const entries = ctx.fs.readdir(path).sort((a, b) => a.name.localeCompare(b.name));
     if (!long) return entries.map((e) => e.name).join("  ") + (entries.length ? "\n" : "");
-    return entries.map((e) => formatLs(ctx.fs, e.name, ctx.fs.getInode(e.ino))).join("\n") + "\n";
+    return entries.map((e) => formatLs(e.name, ctx.fs.getInode(e.ino))).join("\n") + "\n";
   },
 
   cd: (ctx, args) => {
@@ -64,10 +50,7 @@ export const commands: Record<string, Command> = {
     return "";
   },
 
-  cat: (ctx, args, stdin) => {
-    if (args.length === 0) return stdin;
-    return args.map((a) => ctx.fs.read(resolvePath(ctx, a))).join("");
-  },
+  cat: (ctx, args) => args.map((a) => ctx.fs.read(resolvePath(ctx, a))).join(""),
 
   mkdir: (ctx, args) => {
     const parents = args.includes("-p");
@@ -90,25 +73,10 @@ export const commands: Record<string, Command> = {
   },
 
   rm: (ctx, args) => {
-    const recursive = args.includes("-r") || args.includes("-rf");
-    for (const a of args.filter((a) => a !== "-r" && a !== "-rf")) {
+    const recursive = args.includes("-r");
+    for (const a of args.filter((a) => a !== "-r")) {
       ctx.fs.unlink(resolvePath(ctx, a), recursive);
     }
-    return "";
-  },
-
-  cp: (ctx, args) => {
-    const [src, dst] = args;
-    if (!src || !dst) throw new FsError("cp: コピー元とコピー先を指定してください");
-    const content = ctx.fs.read(resolvePath(ctx, src));
-    ctx.fs.write(resolvePath(ctx, dst), content);
-    return "";
-  },
-
-  mv: (ctx, args) => {
-    const [src, dst] = args;
-    if (!src || !dst) throw new FsError("mv: 移動元と移動先を指定してください");
-    ctx.fs.rename(resolvePath(ctx, src), resolvePath(ctx, dst));
     return "";
   },
 
@@ -117,14 +85,6 @@ export const commands: Record<string, Command> = {
     const [, target, linkName] = args;
     if (!target || !linkName) throw new FsError("ln: リンク先とリンク名を指定してください");
     ctx.fs.symlink(target, resolvePath(ctx, linkName));
-    return "";
-  },
-
-  chmod: (ctx, args) => {
-    const [mode, path] = args;
-    if (!mode || !path) throw new FsError("chmod: モードとパスを指定してください");
-    const inode = ctx.fs.getInode(ctx.fs.stat(resolvePath(ctx, path)).ino);
-    inode.mode = octalToMode(mode);
     return "";
   },
 
@@ -155,38 +115,8 @@ export const commands: Record<string, Command> = {
     return lines.join("\n") + "\n";
   },
 
-  find: (ctx, args) => {
-    const start = resolvePath(ctx, args[0] ?? ".");
-    const nameIdx = args.indexOf("-name");
-    const pattern = nameIdx !== -1 ? args[nameIdx + 1] : undefined;
-    const results: string[] = [];
-    const walk = (path: string) => {
-      const inode = ctx.fs.stat(path);
-      const base = path.split("/").pop() ?? path;
-      if (!pattern || base.includes(pattern.replace(/\*/g, ""))) results.push(path);
-      if (inode.type === "dir") {
-        for (const e of ctx.fs.readdir(path)) walk(path === "/" ? "/" + e.name : path + "/" + e.name);
-      }
-    };
-    walk(start);
-    return results.join("\n") + "\n";
-  },
-
   help: () =>
-    Object.keys(commands).sort().join("  ") +
-    "\n\n" +
-    "パイプ ( | ) とリダイレクト ( > , >> ) が使えます。例: cat /proc/cpuinfo | grep model\n",
-
-  grep: (_ctx, args, stdin) => {
-    const pattern = args[0];
-    if (!pattern) throw new FsError("grep: パターンを指定してください");
-    return stdin
-      .split("\n")
-      .filter((line) => line.includes(pattern))
-      .join("\n");
-  },
-
-  clear: () => "\x1b[2J\x1b[H",
+    Object.keys(commands).sort().join("  ") + "\n\nリダイレクト ( > , >> ) が使えます。例: echo hi > /tmp/a.txt\n",
 
   exit: (ctx) => {
     ctx.exit = true;
